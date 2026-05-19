@@ -1,9 +1,7 @@
 import paramiko
 
-from pi_stream_common import PASS, connect
-
-HOST = "videopi.local"
-USER = "maarten"
+from env_config import PI_PASS
+from pi_stream_common import connect
 
 WIDTH = 480
 HEIGHT = 320
@@ -61,8 +59,8 @@ def main() -> None:
     sftp.close()
 
     cmds = [
-        "echo ' ' | sudo -S systemctl stop display-manager",
-        "echo ' ' | sudo -S sh -c 'cat /tmp/fb_pattern.bin > /dev/fb0'",
+        f"echo '{PI_PASS}' | sudo -S systemctl stop display-manager",
+        f"echo '{PI_PASS}' | sudo -S sh -c 'cat /tmp/fb_pattern.bin > /dev/fb0'",
         "cat /sys/bus/spi/devices/spi0.0/statistics/bytes_tx 2>/dev/null || true",
     ]
     for cmd in cmds:

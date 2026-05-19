@@ -1,8 +1,10 @@
 import paramiko
 
-HOST = "videopi.local"
-USER = "maarten"
-PASS = " "
+from env_config import PI_HOST, PI_PASS, PI_USER
+
+HOST = PI_HOST
+USER = PI_USER
+PASS = PI_PASS
 
 WIDTH = 480
 HEIGHT = 320
@@ -46,9 +48,9 @@ def main() -> None:
 
     cmds = [
         "cat /sys/class/graphics/fb0/rotate",
-        "echo ' ' | sudo -S sh -c 'echo 270 > /sys/class/graphics/fb0/rotate'",
+        f"echo '{PASS}' | sudo -S sh -c 'echo 270 > /sys/class/graphics/fb0/rotate'",
         "cat /sys/class/graphics/fb0/rotate",
-        "echo ' ' | sudo -S sh -c 'cat /tmp/fb_quadrants.bin > /dev/fb0'",
+        f"echo '{PASS}' | sudo -S sh -c 'cat /tmp/fb_quadrants.bin > /dev/fb0'",
         "cat /sys/bus/spi/devices/spi0.0/statistics/bytes_tx 2>/dev/null || true",
     ]
 

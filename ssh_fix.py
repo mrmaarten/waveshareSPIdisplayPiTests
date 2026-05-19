@@ -1,14 +1,16 @@
 import paramiko
 import time
 
+from env_config import PI_HOST, PI_PASS, PI_USER
+
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect('videopi.local', username='maarten', password=' ', timeout=10)
+ssh.connect(PI_HOST, username=PI_USER, password=PI_PASS, timeout=10)
 
 def run(cmd, sudo=False):
     print(f'=== {cmd} ===')
     if sudo:
-        full_cmd = f'echo " " | sudo -S bash -c \'{cmd}\' 2>&1'
+        full_cmd = f'echo "{PI_PASS}" | sudo -S bash -c \'{cmd}\' 2>&1'
     else:
         full_cmd = cmd
     stdin, stdout, stderr = ssh.exec_command(full_cmd, timeout=30)

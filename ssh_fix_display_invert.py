@@ -15,10 +15,11 @@ from __future__ import annotations
 import argparse
 import time
 
+from env_config import PI_USER
 from pi_stream_common import HOST_FALLBACK_IP, connect, run, sudo
 
 
-WAVESHARE_OVERLAY_SRC = "/home/maarten/LCD-show/waveshare35c-overlay.dtb"
+WAVESHARE_OVERLAY_SRC = f"/home/{PI_USER}/LCD-show/waveshare35c-overlay.dtb"
 WAVESHARE_OVERLAY_DST = "/boot/firmware/overlays/waveshare35c.dtbo"
 ROTATE = 90
 

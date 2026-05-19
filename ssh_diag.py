@@ -1,8 +1,10 @@
 import paramiko
 
+from env_config import PI_HOST, PI_PASS, PI_USER
+
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect('videopi.local', username='maarten', password=' ', timeout=10)
+ssh.connect(PI_HOST, username=PI_USER, password=PI_PASS, timeout=10)
 
 commands = [
     'uname -a',

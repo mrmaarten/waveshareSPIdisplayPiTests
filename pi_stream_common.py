@@ -11,10 +11,12 @@ from pathlib import Path
 
 import paramiko
 
-HOST = "videopi.local"
+from env_config import PI_HOST, PI_PASS, PI_USER
+
+HOST = PI_HOST
 HOST_FALLBACK_IP = "192.168.0.22"
-USER = "maarten"
-PASS = ""
+USER = PI_USER
+PASS = PI_PASS
 STREAM_PORT = 5000
 WIDTH = 480
 HEIGHT = 320

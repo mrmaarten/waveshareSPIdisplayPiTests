@@ -1,13 +1,15 @@
 import paramiko
 import time
 
+from env_config import PI_HOST, PI_PASS, PI_USER
+
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect('videopi.local', username='maarten', password=' ', timeout=10)
+ssh.connect(PI_HOST, username=PI_USER, password=PI_PASS, timeout=10)
 
 print("Rebooting...")
 try:
-    stdin, stdout, stderr = ssh.exec_command('echo " " | sudo -S reboot 2>&1', timeout=5)
+    stdin, stdout, stderr = ssh.exec_command(f'echo "{PI_PASS}" | sudo -S reboot 2>&1', timeout=5)
     print(stdout.read().decode())
 except:
     pass
@@ -22,7 +24,7 @@ for attempt in range(10):
         print(f"Connection attempt {attempt+1}...")
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect('videopi.local', username='maarten', password=' ', timeout=10)
+        ssh.connect(PI_HOST, username=PI_USER, password=PI_PASS, timeout=10)
         print("Connected!")
         
         def run(cmd):

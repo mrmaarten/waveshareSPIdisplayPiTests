@@ -3,9 +3,11 @@ import time
 import socket
 import sys
 
-HOST = "videopi.local"
-USER = "maarten"
-PASS = " "
+from env_config import PI_HOST, PI_PASS, PI_USER
+
+HOST = PI_HOST
+USER = PI_USER
+PASS = PI_PASS
 PORT = 9000
 WIDTH = 480
 HEIGHT = 320

@@ -1,8 +1,10 @@
 import paramiko
 
+from env_config import PI_HOST, PI_PASS, PI_USER
+
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect('videopi.local', username='maarten', password=' ', timeout=10)
+ssh.connect(PI_HOST, username=PI_USER, password=PI_PASS, timeout=10)
 
 def run(cmd):
     print(f'>>> {cmd}')
@@ -15,7 +17,7 @@ def run(cmd):
     return out.strip()
 
 def sudo(cmd):
-    return run(f'echo " " | sudo -S {cmd} 2>&1')
+    return run(f'echo "{PI_PASS}" | sudo -S {cmd} 2>&1')
 
 # Step 1: Restore from backup
 print("Restoring from backup...")

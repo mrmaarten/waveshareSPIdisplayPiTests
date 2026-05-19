@@ -1,8 +1,10 @@
 import paramiko
 
-HOST = "videopi.local"
-USER = "maarten"
-PASS = " "
+from env_config import PI_HOST, PI_PASS, PI_USER
+
+HOST = PI_HOST
+USER = PI_USER
+PASS = PI_PASS
 
 
 def main() -> None:
@@ -25,7 +27,7 @@ def main() -> None:
         return run(f"echo '{PASS}' | sudo -S bash -lc \"{cmd}\"")
 
     run("ls -la ~/LCD-show/waveshare35b-v2-overlay.dtb")
-    sudo("cp /home/maarten/LCD-show/waveshare35b-v2-overlay.dtb /boot/firmware/overlays/waveshare35b-v2.dtbo")
+    sudo(f"cp /home/{USER}/LCD-show/waveshare35b-v2-overlay.dtb /boot/firmware/overlays/waveshare35b-v2.dtbo")
     run("ls -la /boot/firmware/overlays/waveshare35b-v2.dtbo")
 
     # Inspect active overlays before runtime switch.
