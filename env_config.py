@@ -24,3 +24,10 @@ load_env()
 PI_HOST = os.environ.get("PI_HOST", "videopi.local")
 PI_USER = os.environ.get("PI_USER", "maarten")
 PI_PASS = os.environ.get("PI_PASS", "")
+
+# RTSP camera (HyperPixel boot display) — see ssh_install_rtsp_display.py
+RTSP_HOST = os.environ.get("RTSP_HOST", "192.168.0.190")
+RTSP_PORT = os.environ.get("RTSP_PORT", "554")
+RTSP_PATH = os.environ.get("RTSP_PATH", "/stream2")
+RTSP_USER = os.environ.get("RTSP_USER", "")
+RTSP_PASS = os.environ.get("RTSP_PASS", "")

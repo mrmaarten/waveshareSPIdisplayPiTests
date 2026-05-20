@@ -139,9 +139,22 @@ def prepare_framebuffer(ssh: paramiko.SSHClient) -> None:
     run(ssh, "test -c /dev/fb0 && echo fb0_ok || echo fb0_missing")
 
 
+def hyperpixel_rtsp_ffmpeg_cmd(rtsp_url: str) -> str:
+    """Pi-side ffmpeg: RTSP -> HyperPixel framebuffer (800x480 bgra)."""
+    return (
+        "ffmpeg -hide_banner -loglevel warning "
+        "-rtsp_transport tcp -stimeout 5000000 "
+        f'-i "{rtsp_url}" '
+        f"-vf scale={WIDTH}:{HEIGHT} -pix_fmt {PIX_FMT} -an "
+        "-f fbdev /dev/fb0"
+    )
+
+
 def kill_pi_stream_processes(ssh: paramiko.SSHClient) -> None:
     sudo(ssh, "pkill -f 'ffmpeg.*tcp://' 2>/dev/null || true")
+    sudo(ssh, "pkill -f 'ffmpeg.*rtsp://' 2>/dev/null || true")
     sudo(ssh, "pkill -f 'ffmpeg.*fbdev' 2>/dev/null || true")
+    sudo(ssh, "pkill -f hyperpixel_rtsp_display 2>/dev/null || true")
     sudo(ssh, "pkill -f 'vlc.*tcp://' 2>/dev/null || true")
     sudo(ssh, "pkill -f 'vlc.*udp://' 2>/dev/null || true")
     sudo(ssh, "pkill -x vlc 2>/dev/null || true")

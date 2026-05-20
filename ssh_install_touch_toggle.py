@@ -1,6 +1,7 @@
 """
 Install HyperPixel touch-to-toggle backlight on the Pi.
 
+For tap + RTSP stream together (power save), use ssh_install_touch_rtsp_power.py instead.
 Deploys a small I2C touch listener (works in CLI; does not need uinput/X11).
 Also fixes hyperpixel-touch.service boot failure when /dev/uinput is not ready.
 
