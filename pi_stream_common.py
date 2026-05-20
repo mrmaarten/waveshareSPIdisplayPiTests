@@ -39,7 +39,7 @@ def pi_ffmpeg_vf(negate: bool | None = None) -> str:
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-TEST_VIDEO = SCRIPT_DIR / "test2.mp4"
+TEST_VIDEO = SCRIPT_DIR / "test.mp4"
 
 
 def find_ffmpeg() -> str:
