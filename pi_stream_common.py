@@ -144,6 +144,9 @@ def hyperpixel_rtsp_ffmpeg_cmd(rtsp_url: str) -> str:
     return (
         "ffmpeg -hide_banner -loglevel warning "
         "-rtsp_transport tcp -stimeout 5000000 "
+        "-c:v h264_mmal "
+        "-fflags nobuffer -flags low_delay "
+        "-probesize 32 -analyzeduration 0 "
         f'-i "{rtsp_url}" '
         f"-vf scale={WIDTH}:{HEIGHT} -pix_fmt {PIX_FMT} -an "
         "-f fbdev /dev/fb0"

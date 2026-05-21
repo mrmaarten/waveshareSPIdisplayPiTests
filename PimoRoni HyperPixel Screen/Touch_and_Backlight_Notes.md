@@ -26,7 +26,7 @@ One install deploys RTSP + a touch listener that toggles **backlight and stream 
 
 **Boot:** stream **on**, backlight **on** (same as before). **First tap:** both **off** (stops ffmpeg, dims panel). **Second tap:** both **on**.
 
-**Idle framebuffer (tap off/on):** When the display turns off, the touch script stops RTSP, waits for `ffmpeg` to exit, then fills `/dev/fb0` with **soft yellow** BGRA (`RGB ~(255, 242, 210)`) so the last camera frame is not left on screen. On wake, it fills yellow **before** the backlight turns on, so you see yellow immediately instead of a frozen frame; live RTSP replaces it once the stream reconnects.
+**Idle framebuffer (tap off/on):** When the display turns off, the touch script stops RTSP, waits for `ffmpeg` to exit, then fills `/dev/fb0` with **soft yellow** BGRA (`RGB ~(255, 242, 210)`) so the last camera frame is not left on screen. On wake, it fills yellow **before** the backlight turns on, so you see yellow immediately instead of a frozen frame; live RTSP replaces it once the stream reconnects (~**5 s** tap-to-live image; see [Wake latency](#wake-latency-tap-to-live-stream)).
 
 **One-time install from PC (repo root):**
 
@@ -66,7 +66,7 @@ ssh pi@raspberrypi.local "pgrep -af 'ffmpeg.*rtsp' || echo 'no ffmpeg (display o
 ssh pi@raspberrypi.local "journalctl -u hyperpixel-touch-display-power.service -n 10 --no-pager"
 ```
 
-**Manual test:** camera visible → tap → backlight off and no `ffmpeg` → tap → **soft yellow** on wake, then live stream within a few seconds.
+**Manual test:** camera visible → tap → backlight off and no `ffmpeg` → tap → **soft yellow** on wake immediately, then live stream in ~**5 s** (was ~**8 s** before low-latency ffmpeg flags; see [Wake latency](#wake-latency-tap-to-live-stream)).
 
 **Change camera or password:** Edit `.env` on PC, run `python ssh_install_touch_rtsp_power.py` again.
 
@@ -127,11 +127,25 @@ ssh pi@raspberrypi.local "systemctl is-active hyperpixel-rtsp-display.service hy
 | **Pi service** | `hyperpixel-rtsp-display.service` — `After=network-online.target`, `Restart=always` / `RestartSec=5` |
 | **Pi config** | `/etc/default/hyperpixel-rtsp` (root, mode `600`) — `RTSP_URL`, `WIDTH=800`, `HEIGHT=480`, `PIX_FMT=bgra` |
 | **Pi script** | `/usr/local/bin/hyperpixel_rtsp_display.sh` |
-| **ffmpeg** | `-rtsp_transport tcp -stimeout 5000000` → scale → `bgra` → `-f fbdev /dev/fb0` (no audio) |
+| **ffmpeg** | `-rtsp_transport tcp -stimeout 5000000` + `-c:v h264_mmal` (GPU decode) + `-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0` → scale → `bgra` → `-f fbdev /dev/fb0` (no audio) |
+| **Wake latency** | Tap-to-live stream ~**5 s** (measured); see [Wake latency](#wake-latency-tap-to-live-stream) |
 | **Drop recovery** | Buster `ffmpeg` has no `-reconnect`; systemd restarts the service if ffmpeg exits |
 | **Touch (legacy)** | `hyperpixel-backlight-touch.service` — backlight only; see unified installer above |
 
-**Status:** **Success** — stream runs on boot. With power installer, tap stops/starts stream + backlight.
+**Status:** **Success** — stream runs on boot. With power installer, tap stops/starts stream + backlight. Wake-to-image improved from ~8 s to ~5 s after low-latency ffmpeg input flags; H.264 decode uses `-c:v h264_mmal` (GPU) alongside those flags (May 2026).
+
+#### Wake latency (tap-to-live stream)
+
+When the display is off, a tap runs `systemctl start hyperpixel-rtsp-display.service` and turns the backlight on. Time until the **live camera image** replaces the soft-yellow placeholder:
+
+| Implementation | ffmpeg on wake | Typical tap → live image |
+|----------------|----------------|--------------------------|
+| **Previous** (default probing) | `-rtsp_transport tcp -stimeout 5000000` only | ~**8 s** |
+| **Current** (low-latency + MMAL) | + `-c:v h264_mmal` + `-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0` | ~**5 s** (measured) |
+
+The ~3 s gain is mostly from skipping ffmpeg’s default RTSP input probe (often 2–5 s). Remaining delay is largely the camera keyframe interval (GOP) and RTSP connect — not the `systemctl` round-trip. Further cuts need camera-side GOP tuning or keeping ffmpeg always running (out of scope here).
+
+Deployed via [`ssh_install_rtsp_display.py`](../ssh_install_rtsp_display.py) / re-run [`ssh_install_touch_rtsp_power.py`](../ssh_install_touch_rtsp_power.py).
 
 **Troubleshooting:**
 
@@ -142,6 +156,8 @@ ssh pi@raspberrypi.local "systemctl is-active hyperpixel-rtsp-display.service hy
 | `Option reconnect not found` | Old script on Pi — re-run `ssh_install_rtsp_display.py` (reconnect flags removed for Buster) |
 | Harmless log spam | `[fbdev] non monotonically increasing dts` — known with RTSP → fbdev; video can still display |
 | Change camera URL | Edit `.env` on PC, run `python ssh_install_touch_rtsp_power.py` (or legacy `ssh_install_rtsp_display.py`) |
+| Stream still slow on wake (~5 s is normal now) | Was ~8 s before low-latency flags; to go lower, shorten camera GOP / keyframe interval. If ffmpeg fails to start (`could not find codec parameters`), raise `-probesize`/`-analyzeduration` from `32`/`0` to `100000`/`100000` in `ssh_install_rtsp_display.py` and re-run install |
+| `Unknown decoder 'h264_mmal'` or service won't start | Pi ffmpeg lacks MMAL build — remove `-c:v h264_mmal` from `DISPLAY_SCRIPT` in `ssh_install_rtsp_display.py` (and `hyperpixel_rtsp_ffmpeg_cmd` in `pi_stream_common.py`), re-run install |
 
 **Stop / disable stream only:**
 
@@ -283,6 +299,8 @@ Touch **can** work in CLI (no desktop). It does not need X11. The failures below
 | 10 | **Disable `touchtoggle.service`** | Stopped conflicting evdev listener | **Success** (cleanup) | Prevents crash-looping service from old attempts. |
 | 11 | **RTSP boot display** — `hyperpixel-rtsp-display.service` + `.env` deploy | Pi pulls camera RTSP to fb0; touch service unchanged | **Success** | Legacy split layout: camera on boot + tap for backlight only. |
 | 12 | **Unified power toggle** — `hyperpixel-touch-display-power.service` | Tap toggles backlight + `systemctl start/stop` RTSP | **Success** | Recommended: boot on; tap off/on saves Pi + panel power. |
+| 13 | **Low-latency ffmpeg on wake** — `-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0` in `hyperpixel_rtsp_display.sh` | Same unified tap flow; faster RTSP connect after tap | **Success** | Tap-to-live ~**5 s** vs ~**8 s** with default probing only; see [Wake latency](#wake-latency-tap-to-live-stream). |
+| 14 | **Hardware H.264 decode** — `-c:v h264_mmal` before `-i` in `hyperpixel_rtsp_display.sh` | Offloads decode from CPU (~15–40%) to VideoCore GPU (~2–5%) | **Success** | Deployed May 2026; remove `-c:v h264_mmal` if ffmpeg logs unknown decoder |
 
 See **[Production — unified touch + RTSP power toggle](#production--unified-touch--rtsp-power-toggle-recommended)** for install and verification.
 

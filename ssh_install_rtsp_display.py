@@ -44,6 +44,9 @@ set -euo pipefail
 . /etc/default/hyperpixel-rtsp
 exec ffmpeg -hide_banner -loglevel warning \\
   -rtsp_transport tcp -stimeout 5000000 \\
+  -c:v h264_mmal \\
+  -fflags nobuffer -flags low_delay \\
+  -probesize 32 -analyzeduration 0 \\
   -i "$RTSP_URL" \\
   -vf "scale=${WIDTH}:${HEIGHT}" -pix_fmt "${PIX_FMT}" -an \\
   -f fbdev /dev/fb0
