@@ -47,6 +47,12 @@ ADDR = 0x5c
 DEBOUNCE_SEC = 0.5
 BOOT_SYNC_RETRIES = 10
 BOOT_SYNC_DELAY_SEC = 1.0
+WIDTH = 800
+HEIGHT = 480
+# BGRA soft yellow — RGB ~(255, 242, 210)
+IDLE_PIXEL = bytes((210, 242, 255, 255))
+RTSP_STOP_WAIT_SEC = 3.0
+RTSP_STOP_POLL_SEC = 0.1
 
 backlight = Backlight()
 display_on = True
@@ -67,11 +73,32 @@ def set_rtsp(active: bool) -> None:
     subprocess.run(["systemctl", action, RTSP_UNIT], check=False)
 
 
+def fill_framebuffer_idle() -> None:
+    frame = IDLE_PIXEL * (WIDTH * HEIGHT)
+    with open("/dev/fb0", "wb") as fb:
+        fb.write(frame)
+
+
+def wait_rtsp_stopped() -> None:
+    deadline = time.monotonic() + RTSP_STOP_WAIT_SEC
+    while time.monotonic() < deadline:
+        if not rtsp_active():
+            return
+        time.sleep(RTSP_STOP_POLL_SEC)
+
+
 def set_display_on(on: bool) -> None:
     global display_on
     display_on = on
-    backlight.power = on
-    set_rtsp(on)
+    if on:
+        fill_framebuffer_idle()
+        backlight.power = True
+        set_rtsp(True)
+    else:
+        set_rtsp(False)
+        wait_rtsp_stopped()
+        fill_framebuffer_idle()
+        backlight.power = False
     state = "ON" if on else "OFF"
     print(f"Display {state} (backlight + {RTSP_UNIT})")
 

@@ -26,6 +26,8 @@ One install deploys RTSP + a touch listener that toggles **backlight and stream 
 
 **Boot:** stream **on**, backlight **on** (same as before). **First tap:** both **off** (stops ffmpeg, dims panel). **Second tap:** both **on**.
 
+**Idle framebuffer (tap off/on):** When the display turns off, the touch script stops RTSP, waits for `ffmpeg` to exit, then fills `/dev/fb0` with **soft yellow** BGRA (`RGB ~(255, 242, 210)`) so the last camera frame is not left on screen. On wake, it fills yellow **before** the backlight turns on, so you see yellow immediately instead of a frozen frame; live RTSP replaces it once the stream reconnects.
+
 **One-time install from PC (repo root):**
 
 1. Copy [`.env.example`](../.env.example) → `.env` and set Pi SSH + camera credentials.
@@ -64,7 +66,7 @@ ssh pi@raspberrypi.local "pgrep -af 'ffmpeg.*rtsp' || echo 'no ffmpeg (display o
 ssh pi@raspberrypi.local "journalctl -u hyperpixel-touch-display-power.service -n 10 --no-pager"
 ```
 
-**Manual test:** camera visible → tap → backlight off and no `ffmpeg` → tap → stream returns.
+**Manual test:** camera visible → tap → backlight off and no `ffmpeg` → tap → **soft yellow** on wake, then live stream within a few seconds.
 
 **Change camera or password:** Edit `.env` on PC, run `python ssh_install_touch_rtsp_power.py` again.
 
