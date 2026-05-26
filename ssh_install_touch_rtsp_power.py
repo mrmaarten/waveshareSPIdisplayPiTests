@@ -1,7 +1,7 @@
 """
 Install HyperPixel touch + RTSP unified power toggle on the Pi.
 
-Boot: camera stream ON, backlight ON (same as split install).
+Boot: camera stream ON through vout_rpi, backlight ON (same as split install).
 Tap: toggles backlight AND starts/stops hyperpixel-rtsp-display.service together.
 
 Disables hyperpixel-backlight-touch.service (legacy backlight-only touch).

@@ -175,7 +175,8 @@ def deploy_backlight_touch_service(ssh, script_path: str) -> None:
 def restore_hyperpixel_touch_if_patched(ssh) -> None:
     """Avoid double-toggle if an earlier install patched hyperpixel-touch."""
     out, _, _ = run(ssh, f"grep -c {PATCH_MARKER} {HP_TOUCH_PATH} 2>/dev/null || echo 0")
-    if out.strip() == "0":
+    patch_count = max((int(line) for line in out.splitlines() if line.strip().isdigit()), default=0)
+    if patch_count == 0:
         return
     print("Restoring stock hyperpixel-touch (backlight handled by new service)...")
     sudo_quiet(ssh, f"test -f {HP_TOUCH_BACKUP} && cp {HP_TOUCH_BACKUP} {HP_TOUCH_PATH}")

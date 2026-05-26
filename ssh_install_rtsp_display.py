@@ -1,7 +1,7 @@
 """
 Install HyperPixel RTSP camera display on the Pi (starts on boot).
 
-Pulls RTSP on the Pi with ffmpeg -> /dev/fb0 (800x480 bgra).
+Pulls RTSP on the Pi with ffmpeg -> Raspberry Pi MMAL video output (vout_rpi).
 For tap + stream together (power save), use ssh_install_touch_rtsp_power.py instead.
 Touch-to-toggle backlight only (hyperpixel-backlight-touch.service) stays independent.
 
@@ -44,17 +44,18 @@ set -euo pipefail
 . /etc/default/hyperpixel-rtsp
 exec ffmpeg -hide_banner -loglevel warning \\
   -rtsp_transport tcp -stimeout 5000000 \\
+  -fflags +nobuffer+genpts -flags low_delay \\
+  -use_wallclock_as_timestamps 1 \\
   -c:v h264_mmal \\
-  -fflags nobuffer -flags low_delay \\
   -probesize 32 -analyzeduration 0 \\
   -i "$RTSP_URL" \\
-  -vf "scale=${WIDTH}:${HEIGHT}" -pix_fmt "${PIX_FMT}" -an \\
-  -f fbdev /dev/fb0
+  -an \\
+  -f vout_rpi -fullscreen 1 -
 """
 
 SYSTEMD_UNIT = """\
 [Unit]
-Description=HyperPixel RTSP camera to framebuffer
+Description=HyperPixel RTSP camera to MMAL video output
 After=network-online.target hyperpixel-init.service
 Wants=network-online.target
 
@@ -146,7 +147,7 @@ def enable_and_start(ssh, start_now: bool) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Install Pi RTSP -> HyperPixel fb0 on boot")
+    parser = argparse.ArgumentParser(description="Install Pi RTSP -> HyperPixel MMAL output on boot")
     parser.add_argument(
         "--no-start",
         action="store_true",

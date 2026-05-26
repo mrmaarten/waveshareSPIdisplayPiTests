@@ -12,12 +12,12 @@ One install deploys RTSP + a touch listener that toggles **backlight and stream 
 
 | Service | Role | Boot |
 |---------|------|------|
-| `hyperpixel-rtsp-display.service` | `ffmpeg` RTSP → 800×480 `bgra` → `/dev/fb0` | **Enabled** — starts on boot |
+| `hyperpixel-rtsp-display.service` | `ffmpeg` RTSP → `h264_mmal` decode → `vout_rpi` fullscreen MMAL output | **Enabled** — starts on boot |
 | `hyperpixel-touch-display-power.service` | I2C touch → backlight + `systemctl start/stop` RTSP | **Enabled** — syncs display on at start |
 | `hyperpixel-backlight-touch.service` | Legacy backlight-only touch | **Disabled** by power installer (not removed) |
 
 ```
-  [Camera RTSP] ──network──► Pi ffmpeg ──► /dev/fb0
+  [Camera RTSP] ──network──► Pi ffmpeg ──► vout_rpi / MMAL display output
          ▲                           │
          │              systemctl start/stop
          └──────── [Finger tap] ──I2C──► hyperpixel_touch_display_power.py
@@ -26,7 +26,7 @@ One install deploys RTSP + a touch listener that toggles **backlight and stream 
 
 **Boot:** stream **on**, backlight **on** (same as before). **First tap:** both **off** (stops ffmpeg, dims panel). **Second tap:** both **on**.
 
-**Idle framebuffer (tap off/on):** When the display turns off, the touch script stops RTSP, waits for `ffmpeg` to exit, then fills `/dev/fb0` with **soft yellow** BGRA (`RGB ~(255, 242, 210)`) so the last camera frame is not left on screen. On wake, it fills yellow **before** the backlight turns on, so you see yellow immediately instead of a frozen frame; live RTSP replaces it once the stream reconnects (~**5 s** tap-to-live image; see [Wake latency](#wake-latency-tap-to-live-stream)).
+**Idle framebuffer (tap off/on):** When the display turns off, the touch script stops RTSP, waits for `ffmpeg` to exit, then fills `/dev/fb0` with **soft yellow** BGRA (`RGB ~(255, 242, 210)`) so the last camera frame is not left on screen. On wake, it fills yellow **before** the backlight turns on, so you see yellow immediately instead of a frozen frame; the `vout_rpi` live overlay replaces it once the stream reconnects (~**5 s** tap-to-live image; see [Wake latency](#wake-latency-tap-to-live-stream)).
 
 **One-time install from PC (repo root):**
 
@@ -34,12 +34,12 @@ One install deploys RTSP + a touch listener that toggles **backlight and stream 
 2. Install unified power mode:
 
    ```bash
-   python ssh_install_touch_rtsp_power.py
+   ./.venv/bin/python ssh_install_touch_rtsp_power.py
    ```
 
    Use `--no-start` to update config/units without restarting RTSP immediately.
 
-On macOS, if `paramiko` is missing: `python3 -m venv .venv && .venv/bin/pip install paramiko` then use `.venv/bin/python` for the commands above.
+On this repo, use the checked-in virtualenv path. If `paramiko` is missing in a fresh clone: `python3 -m venv .venv && .venv/bin/pip install paramiko`, then use `./.venv/bin/python` for the commands above.
 
 **Example `.env` (camera section):**
 
@@ -68,7 +68,7 @@ ssh pi@raspberrypi.local "journalctl -u hyperpixel-touch-display-power.service -
 
 **Manual test:** camera visible → tap → backlight off and no `ffmpeg` → tap → **soft yellow** on wake immediately, then live stream in ~**5 s** (was ~**8 s** before low-latency ffmpeg flags; see [Wake latency](#wake-latency-tap-to-live-stream)).
 
-**Change camera or password:** Edit `.env` on PC, run `python ssh_install_touch_rtsp_power.py` again.
+**Change camera or password:** Edit `.env` on PC, run `./.venv/bin/python ssh_install_touch_rtsp_power.py` again.
 
 **Repo files:** [`ssh_install_touch_rtsp_power.py`](../ssh_install_touch_rtsp_power.py), [`env_config.py`](../env_config.py).
 
@@ -82,7 +82,7 @@ sudo systemctl enable --now hyperpixel-backlight-touch.service
 sudo systemctl enable --now hyperpixel-rtsp-display.service
 ```
 
-Or from PC: `python ssh_install_touch_toggle.py` then `python ssh_install_rtsp_display.py` (do not re-run power installer).
+Or from PC: `./.venv/bin/python ssh_install_touch_toggle.py` then `./.venv/bin/python ssh_install_rtsp_display.py` (do not re-run power installer).
 
 ---
 
@@ -92,11 +92,11 @@ Two independent systemd services (stream always on; tap only dims panel):
 
 | Service | Role |
 |---------|------|
-| `hyperpixel-rtsp-display.service` | RTSP → framebuffer |
+| `hyperpixel-rtsp-display.service` | RTSP → `vout_rpi` MMAL output |
 | `hyperpixel-backlight-touch.service` | I2C touch → `rpi_backlight` only |
 
 ```
-  [Camera RTSP] ──network──► Pi ffmpeg ──► /dev/fb0 (HyperPixel image)
+  [Camera RTSP] ──network──► Pi ffmpeg ──► vout_rpi / MMAL display output
                                     ▲
   [Finger tap] ──I2C 0x5c──► hyperpixel_backlight_touch.py ──► backlight on/off
 ```
@@ -104,8 +104,8 @@ Two independent systemd services (stream always on; tap only dims panel):
 **Install (legacy):**
 
 ```bash
-python ssh_install_touch_toggle.py
-python ssh_install_rtsp_display.py
+./.venv/bin/python ssh_install_touch_toggle.py
+./.venv/bin/python ssh_install_rtsp_display.py
 ```
 
 **Verify (legacy):**
@@ -123,16 +123,16 @@ ssh pi@raspberrypi.local "systemctl is-active hyperpixel-rtsp-display.service hy
 | Item | Detail |
 |------|--------|
 | **Configure** | Repo `.env`: `RTSP_HOST`, `RTSP_PORT`, `RTSP_PATH`, `RTSP_USER`, `RTSP_PASS` |
-| **Install** | `python ssh_install_rtsp_display.py` (use `--no-start` to enable on boot without starting now) |
+| **Install** | `./.venv/bin/python ssh_install_rtsp_display.py` (use `--no-start` to enable on boot without starting now) |
 | **Pi service** | `hyperpixel-rtsp-display.service` — `After=network-online.target`, `Restart=always` / `RestartSec=5` |
-| **Pi config** | `/etc/default/hyperpixel-rtsp` (root, mode `600`) — `RTSP_URL`, `WIDTH=800`, `HEIGHT=480`, `PIX_FMT=bgra` |
+| **Pi config** | `/etc/default/hyperpixel-rtsp` (root, mode `600`) — `RTSP_URL`, plus retained `WIDTH=800`, `HEIGHT=480`, `PIX_FMT=bgra` fallback settings |
 | **Pi script** | `/usr/local/bin/hyperpixel_rtsp_display.sh` |
-| **ffmpeg** | `-rtsp_transport tcp -stimeout 5000000` + `-c:v h264_mmal` (GPU decode) + `-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0` → scale → `bgra` → `-f fbdev /dev/fb0` (no audio) |
+| **ffmpeg** | `-rtsp_transport tcp -stimeout 5000000` + `-fflags +nobuffer+genpts -flags low_delay -use_wallclock_as_timestamps 1` + `-c:v h264_mmal` (GPU decode) + `-probesize 32 -analyzeduration 0` → `-f vout_rpi -fullscreen 1 -` (no audio) |
 | **Wake latency** | Tap-to-live stream ~**5 s** (measured); see [Wake latency](#wake-latency-tap-to-live-stream) |
 | **Drop recovery** | Buster `ffmpeg` has no `-reconnect`; systemd restarts the service if ffmpeg exits |
 | **Touch (legacy)** | `hyperpixel-backlight-touch.service` — backlight only; see unified installer above |
 
-**Status:** **Success** — stream runs on boot. With power installer, tap stops/starts stream + backlight. Wake-to-image improved from ~8 s to ~5 s after low-latency ffmpeg input flags; H.264 decode uses `-c:v h264_mmal` (GPU) alongside those flags (May 2026).
+**Status:** **Success** — stream runs on boot through `vout_rpi`. With power installer, tap stops/starts stream + backlight. Wake-to-image improved from ~8 s to ~5 s after low-latency ffmpeg input flags; CPU dropped from the old framebuffer path's observed ~85% to roughly 20% after switching presentation to MMAL output (May 2026).
 
 #### Wake latency (tap-to-live stream)
 
@@ -141,7 +141,7 @@ When the display is off, a tap runs `systemctl start hyperpixel-rtsp-display.ser
 | Implementation | ffmpeg on wake | Typical tap → live image |
 |----------------|----------------|--------------------------|
 | **Previous** (default probing) | `-rtsp_transport tcp -stimeout 5000000` only | ~**8 s** |
-| **Current** (low-latency + MMAL) | + `-c:v h264_mmal` + `-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0` | ~**5 s** (measured) |
+| **Current** (low-latency + MMAL output) | + `-fflags +nobuffer+genpts -flags low_delay -use_wallclock_as_timestamps 1` + `-c:v h264_mmal` + `-probesize 32 -analyzeduration 0` + `-f vout_rpi -fullscreen 1 -` | ~**5 s** (measured) |
 
 The ~3 s gain is mostly from skipping ffmpeg’s default RTSP input probe (often 2–5 s). Remaining delay is largely the camera keyframe interval (GOP) and RTSP connect — not the `systemctl` round-trip. Further cuts need camera-side GOP tuning or keeping ffmpeg always running (out of scope here).
 
@@ -154,10 +154,10 @@ Deployed via [`ssh_install_rtsp_display.py`](../ssh_install_rtsp_display.py) / r
 | Black screen, service `active` | Camera reachable from Pi: `ping 192.168.0.190`; credentials in `.env`; re-run install after `.env` change |
 | Service crash-loop | `journalctl -u hyperpixel-rtsp-display.service -f` — auth errors, wrong path, or ffmpeg option not supported |
 | `Option reconnect not found` | Old script on Pi — re-run `ssh_install_rtsp_display.py` (reconnect flags removed for Buster) |
-| Harmless log spam | `[fbdev] non monotonically increasing dts` — known with RTSP → fbdev; video can still display |
-| Change camera URL | Edit `.env` on PC, run `python ssh_install_touch_rtsp_power.py` (or legacy `ssh_install_rtsp_display.py`) |
+| Harmless log warning | `[vout_rpi] non monotonically increasing dts` once during startup — observed with generated timestamps; video can still display |
+| Change camera URL | Edit `.env` on PC, run `./.venv/bin/python ssh_install_touch_rtsp_power.py` (or legacy split `ssh_install_rtsp_display.py`) |
 | Stream still slow on wake (~5 s is normal now) | Was ~8 s before low-latency flags; to go lower, shorten camera GOP / keyframe interval. If ffmpeg fails to start (`could not find codec parameters`), raise `-probesize`/`-analyzeduration` from `32`/`0` to `100000`/`100000` in `ssh_install_rtsp_display.py` and re-run install |
-| `Unknown decoder 'h264_mmal'` or service won't start | Pi ffmpeg lacks MMAL build — remove `-c:v h264_mmal` from `DISPLAY_SCRIPT` in `ssh_install_rtsp_display.py` (and `hyperpixel_rtsp_ffmpeg_cmd` in `pi_stream_common.py`), re-run install |
+| `Unknown decoder 'h264_mmal'` or service won't start | Pi ffmpeg lacks MMAL build — remove `-c:v h264_mmal` from `DISPLAY_SCRIPT` in `ssh_install_rtsp_display.py`, re-run install |
 
 **Stop / disable stream only:**
 
@@ -172,7 +172,7 @@ sudo systemctl disable hyperpixel-rtsp-display.service
 
 | Item | Detail |
 |------|--------|
-| **Install** | `python ssh_install_touch_toggle.py` (superseded by `ssh_install_touch_rtsp_power.py`) |
+| **Install** | `./.venv/bin/python ssh_install_touch_toggle.py` (superseded by `ssh_install_touch_rtsp_power.py`) |
 | **Pi service** | `hyperpixel-backlight-touch.service` (enabled on boot) |
 | **Pi script** | `/home/pi/hyperpixel_backlight_touch.py` |
 | **How it works** | Python 3: **I2C bus 11** @ `0x5c` + GPIO interrupt (pin 27). No desktop, no `uinput`, no `evdev`. Toggles `rpi_backlight` per tap (0.5s debounce). |
@@ -193,7 +193,7 @@ sudo systemctl disable hyperpixel-rtsp-display.service
 
 ---
 
-### Video on screen from PC (dev / test only)
+### Video on screen from PC (dev / framebuffer test only)
 
 Not needed for normal use once RTSP boot display is installed.
 
@@ -265,19 +265,19 @@ sudo python3 -c "from rpi_backlight import Backlight; Backlight().power = False"
 
 ---
 
-### 3. Video to framebuffer — PC push vs Pi RTSP
+### 3. Video output — production MMAL vs dev framebuffer
 
 | Mode | How | When |
 |------|-----|------|
-| **Pi RTSP (production)** | `hyperpixel-rtsp-display.service` | Boot, no PC |
-| **PC TCP push** | `ssh_stream_hyperpixel.py` | Development, test patterns |
+| **Pi RTSP (production)** | `hyperpixel-rtsp-display.service` → `vout_rpi` | Boot, no PC |
+| **PC TCP push** | `ssh_stream_hyperpixel.py` → `/dev/fb0` | Development, test patterns |
 
-**HyperPixel ffmpeg settings** (both paths):
+**Framebuffer ffmpeg settings** (dev/test path):
 
 - Resolution: `800×480`
 - Pixel format: `bgra` (Pi `fbdev` rejected `rgb565le`)
 
-**Status:** **Success** for both; backlight is separate (touch or SSH).
+**Status:** **Success** for both. Production now prefers `vout_rpi` because the GPU/display pipeline handles presentation more efficiently than CPU scale/convert/copy into `/dev/fb0`.
 
 ---
 
@@ -301,6 +301,7 @@ Touch **can** work in CLI (no desktop). It does not need X11. The failures below
 | 12 | **Unified power toggle** — `hyperpixel-touch-display-power.service` | Tap toggles backlight + `systemctl start/stop` RTSP | **Success** | Recommended: boot on; tap off/on saves Pi + panel power. |
 | 13 | **Low-latency ffmpeg on wake** — `-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0` in `hyperpixel_rtsp_display.sh` | Same unified tap flow; faster RTSP connect after tap | **Success** | Tap-to-live ~**5 s** vs ~**8 s** with default probing only; see [Wake latency](#wake-latency-tap-to-live-stream). |
 | 14 | **Hardware H.264 decode** — `-c:v h264_mmal` before `-i` in `hyperpixel_rtsp_display.sh` | Offloads decode from CPU (~15–40%) to VideoCore GPU (~2–5%) | **Success** | Deployed May 2026; remove `-c:v h264_mmal` if ffmpeg logs unknown decoder |
+| 15 | **GPU-side presentation** — `-f vout_rpi -fullscreen 1 -` with generated timestamps | Bypasses CPU scale/convert/copy to `/dev/fb0`; VideoCore/MMAL handles display output | **Success** | HyperPixel video looked good; observed ffmpeg CPU dropped from ~85% framebuffer path to roughly 20–32% |
 
 See **[Production — unified touch + RTSP power toggle](#production--unified-touch--rtsp-power-toggle-recommended)** for install and verification.
 
@@ -324,13 +325,13 @@ Installed by `curl https://get.pimoroni.com/hyperpixel | bash`.
 | Script | Purpose |
 |--------|---------|
 | [`ssh_install_touch_rtsp_power.py`](../ssh_install_touch_rtsp_power.py) | **Production:** RTSP on boot + tap toggles stream and backlight together |
-| [`ssh_install_rtsp_display.py`](../ssh_install_rtsp_display.py) | Legacy: RTSP camera → HyperPixel on boot only |
+| [`ssh_install_rtsp_display.py`](../ssh_install_rtsp_display.py) | Split install: RTSP camera → HyperPixel `vout_rpi` on boot only |
 | [`ssh_install_touch_toggle.py`](../ssh_install_touch_toggle.py) | Legacy: I2C touch-to-backlight only |
 | [`ssh_stream_hyperpixel.py`](../ssh_stream_hyperpixel.py) | Dev: stream `test.mp4` from PC; keys **1** / **2** for backlight |
 | [`pi_stream_common.py`](../pi_stream_common.py) | SSH, ffmpeg, `sudo`, shared helpers |
 | [`env_config.py`](../env_config.py) | Loads `.env` (`PI_*`, `RTSP_*`) |
 | [`.env.example`](../.env.example) | Template for Pi SSH + RTSP credentials |
-| [`Setup_Guide.md`](Setup_Guide.md) | Original flash/driver/omxplayer/touch guide (Goodix + `touchtoggle` — see table #1) |
+| [`Setup_Guide.md`](Setup_Guide.md) | Flash/driver setup plus current automated `vout_rpi` + touch-power install |
 
 ---
 
@@ -338,16 +339,16 @@ Installed by `curl https://get.pimoroni.com/hyperpixel | bash`.
 
 | What you want | What to use |
 |---------------|-------------|
-| Camera on boot; tap off/on stream + backlight | `python ssh_install_touch_rtsp_power.py` |
-| Camera on screen only (legacy) | `ssh_install_rtsp_display.py` |
-| Tap backlight only, stream always on (legacy) | `ssh_install_touch_toggle.py` |
-| Change camera or password | Edit `.env`, re-run `ssh_install_touch_rtsp_power.py` |
+| Camera on boot; tap off/on stream + backlight | `./.venv/bin/python ssh_install_touch_rtsp_power.py` |
+| Camera on screen only (split install) | `./.venv/bin/python ssh_install_rtsp_display.py` |
+| Tap backlight only, stream always on (legacy touch mode) | `./.venv/bin/python ssh_install_touch_toggle.py` |
+| Change camera or password | Edit `.env`, re-run `./.venv/bin/python ssh_install_touch_rtsp_power.py` |
 | Test video from PC | `ssh_stream_hyperpixel.py` |
 
 If something breaks after an OS or HyperPixel reinstall:
 
 ```bash
-python ssh_install_touch_rtsp_power.py
+./.venv/bin/python ssh_install_touch_rtsp_power.py
 ```
 
 Check:

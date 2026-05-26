@@ -157,6 +157,7 @@ def kill_pi_stream_processes(ssh: paramiko.SSHClient) -> None:
     sudo(ssh, "pkill -f 'ffmpeg.*tcp://' 2>/dev/null || true")
     sudo(ssh, "pkill -f 'ffmpeg.*rtsp://' 2>/dev/null || true")
     sudo(ssh, "pkill -f 'ffmpeg.*fbdev' 2>/dev/null || true")
+    sudo(ssh, "pkill -f 'ffmpeg.*vout_rpi' 2>/dev/null || true")
     sudo(ssh, "pkill -f hyperpixel_rtsp_display 2>/dev/null || true")
     sudo(ssh, "pkill -f 'vlc.*tcp://' 2>/dev/null || true")
     sudo(ssh, "pkill -f 'vlc.*udp://' 2>/dev/null || true")

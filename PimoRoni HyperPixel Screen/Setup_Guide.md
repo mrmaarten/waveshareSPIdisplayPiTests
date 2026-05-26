@@ -1,9 +1,26 @@
 # Setup Guide: Tapo Camera Stream on Pimoroni HyperPixel 3.5" (CLI Mode)
 
 ## Project Summary
-The goal is to repurpose an original (discontinued) Pimoroni HyperPixel 3.5" display to show a live RTSP video stream from a Tapo security camera. The setup will run in a lightweight, headless CLI environment (no desktop GUI) to save resources. Additionally, the screen's capacitive touch capabilities will be used to toggle the backlight on and off with a simple tap.
+The goal is to repurpose an original (discontinued) Pimoroni HyperPixel 3.5" display to show a live RTSP video stream from a Tapo security camera. The setup runs in a lightweight, headless CLI environment (no desktop GUI). The screen's capacitive touch controller toggles both the camera stream and the backlight with a simple tap.
 
 **Important Note:** The original HyperPixel 3.5" is incompatible with modern 64-bit Raspberry Pi OS versions (Bullseye, Bookworm) due to changes in the graphics stack (Wayland/KMS). This guide relies on the **Legacy 32-bit OS (Buster)** to ensure the display and touch drivers work flawlessly.
+
+## Current Automated Install
+
+The repo now contains the final installer for this setup:
+
+```bash
+./.venv/bin/python ssh_install_touch_rtsp_power.py
+```
+
+Run it from the repo root on this machine. It reads Pi SSH and RTSP camera settings from `.env`, installs/updates the Pi services, and starts the screen in the desired production mode:
+
+- `hyperpixel-rtsp-display.service` pulls the RTSP stream with `ffmpeg`, decodes H.264 with `h264_mmal`, and presents it through Raspberry Pi MMAL video output with `vout_rpi`.
+- `hyperpixel-touch-display-power.service` listens to the HyperPixel touch controller and toggles both the stream service and the backlight together.
+- Boot policy is screen on, backlight on, and camera stream running.
+- Tap policy is display off/on with the stream stopped while the display is off.
+
+The older `/dev/fb0` framebuffer path worked, but it spent CPU on scaling, colorspace conversion, and framebuffer copies. The tested `vout_rpi` path displayed correctly on the HyperPixel and reduced observed `ffmpeg` CPU from about `85%` to roughly `20-32%`.
 
 ---
 
@@ -57,131 +74,112 @@ To stop the terminal from going to sleep on its own after 10 minutes:
 
 ---
 
-## Step 4: Setting up the Video Stream
+## Step 4: Configure `.env`
 
-We will use `omxplayer`, a hardware-accelerated video player designed specifically for the Raspberry Pi's legacy graphics stack.
+On the computer running this repo, copy `.env.example` to `.env` and fill in the Pi SSH credentials plus the Tapo RTSP camera settings:
 
-1. Install `omxplayer`:
-   ```bash
-   sudo apt update
-   sudo apt install omxplayer
-   ```
-2. Test your Tapo camera stream. You will need to enable RTSP streaming in the Tapo app (Camera Settings -> Advanced Settings -> Camera Account) and set a username and password.
-   ```bash
-   omxplayer --avdict rtsp_transport:tcp "rtsp://tapo_user:tapo_pass@<TAPO_IP_ADDRESS>:554/stream1"
-   ```
-   *If the stream plays successfully on the screen, press `Ctrl+C` in your SSH terminal to stop it.*
+```env
+PI_HOST=raspberrypi.local
+PI_USER=pi
+PI_PASS=raspberry
 
-3. **Create a Systemd Service to run the stream on boot:**
-   ```bash
-   sudo nano /etc/systemd/system/tapostream.service
-   ```
-   Add the following content:
-   ```ini
-   [Unit]
-   Description=Tapo Camera RTSP Stream
-   After=network.target
+RTSP_HOST=192.168.0.190
+RTSP_PORT=554
+RTSP_PATH=/stream2
+RTSP_USER=Camera
+RTSP_PASS=your_camera_password_here
+```
 
-   [Service]
-   Type=simple
-   User=pi
-   ExecStart=/usr/bin/omxplayer --avdict rtsp_transport:tcp "rtsp://tapo_user:tapo_pass@<TAPO_IP_ADDRESS>:554/stream1"
-   Restart=always
-   RestartSec=10
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-4. Enable and start the service:
-   ```bash
-   sudo systemctl enable tapostream.service
-   sudo systemctl start tapostream.service
-   ```
+The installer percent-encodes special characters in the camera username/password before writing `/etc/default/hyperpixel-rtsp` on the Pi. Do not hand-edit the RTSP URL on the Pi unless you are debugging.
 
 ---
 
-## Step 5: Setting up Touch-to-Toggle
+## Step 5: Install Video + Touch Power Services
 
-We will use a Python script to listen for touch events and toggle the backlight.
+Run the production installer from the repo root:
 
-1. Install the required Python libraries:
-   ```bash
-   sudo apt install python3-pip
-   sudo pip3 install evdev rpi_backlight
-   ```
+```bash
+./.venv/bin/python ssh_install_touch_rtsp_power.py
+```
 
-2. Create the Python script:
-   ```bash
-   nano ~/touch_toggle.py
-   ```
-   Add the following code:
-   ```python
-   import evdev
-   import time
-   from rpi_backlight import Backlight
+This deploys:
 
-   # Initialize backlight control
-   backlight = Backlight()
+- `hyperpixel-rtsp-display.service`: pulls RTSP with `ffmpeg`, uses `h264_mmal` for GPU H.264 decode, and outputs fullscreen through Raspberry Pi MMAL video output with `vout_rpi`.
+- `hyperpixel-touch-display-power.service`: reads the HyperPixel touch controller directly over I2C and toggles both the RTSP service and the backlight.
 
-   # Find the Goodix touch screen device
-   touch_device = None
-   devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
-   for device in devices:
-       if "Goodix" in device.name or "gt911" in device.name.lower():
-           touch_device = device
-           break
+Boot behavior:
 
-   if touch_device is None:
-       print("Touch screen not found!")
-       exit(1)
+- Backlight on.
+- Camera stream running.
+- Video presented by `vout_rpi`, not by CPU scaling/converting/copying into `/dev/fb0`.
 
-   print(f"Listening for touches on {touch_device.name}...")
+Tap behavior:
 
-   # Variables to handle debounce
-   last_toggle_time = 0
-   debounce_delay = 0.5  # half a second
+- First tap stops `hyperpixel-rtsp-display.service`, writes the soft-yellow idle framebuffer, and turns the backlight off.
+- Second tap writes the idle framebuffer, turns the backlight on, restarts the RTSP service, and the live camera feed appears after reconnect.
 
-   # Listen for events
-   try:
-       for event in touch_device.read_loop():
-           # EV_KEY type with code 330 (BTN_TOUCH) indicates a touch
-           if event.type == evdev.ecodes.EV_KEY and event.code == evdev.ecodes.BTN_TOUCH and event.value == 1:
-               current_time = time.time()
-               if current_time - last_toggle_time > debounce_delay:
-                   # Toggle the backlight
-                   backlight.power = not backlight.power
-                   last_toggle_time = current_time
-   except KeyboardInterrupt:
-       pass
-   ```
+Use `--no-start` only when you want to update files and enable services for boot without restarting the current stream:
 
-3. **Create a Systemd Service for the touch script:**
-   ```bash
-   sudo nano /etc/systemd/system/touchtoggle.service
-   ```
-   Add the following content:
-   ```ini
-   [Unit]
-   Description=HyperPixel Touch to Toggle Backlight
-   After=multi-user.target
+```bash
+./.venv/bin/python ssh_install_touch_rtsp_power.py --no-start
+```
 
-   [Service]
-   Type=simple
-   User=root
-   ExecStart=/usr/bin/python3 /home/pi/touch_toggle.py
-   Restart=always
-   RestartSec=5
+---
 
-   [Install]
-   WantedBy=multi-user.target
-   ```
-   *(Note: Ensure the `ExecStart` path matches where you saved the script, e.g., `/home/yourusername/touch_toggle.py`)*
+## Step 6: Verify
 
-4. Enable and start the touch service:
-   ```bash
-   sudo systemctl enable touchtoggle.service
-   sudo systemctl start touchtoggle.service
-   ```
+Check service state:
+
+```bash
+ssh pi@raspberrypi.local "systemctl is-active hyperpixel-touch-display-power.service hyperpixel-rtsp-display.service"
+ssh pi@raspberrypi.local "systemctl is-enabled hyperpixel-touch-display-power.service hyperpixel-rtsp-display.service"
+```
+
+Expected:
+
+```text
+active
+active
+enabled
+enabled
+```
+
+Check that the installed display command uses GPU/MMAL output:
+
+```bash
+ssh pi@raspberrypi.local "grep -E 'h264_mmal|vout_rpi|genpts|use_wallclock' /usr/local/bin/hyperpixel_rtsp_display.sh"
+```
+
+Expected markers:
+
+```text
+-fflags +nobuffer+genpts -flags low_delay
+-use_wallclock_as_timestamps 1
+-c:v h264_mmal
+-f vout_rpi -fullscreen 1 -
+```
+
+Check current ffmpeg CPU without printing the RTSP URL:
+
+```bash
+ssh pi@raspberrypi.local "ps -C ffmpeg -o pid,etime,stat,pcpu,pmem,comm"
+```
+
+The successful May 2026 test showed the old framebuffer path around `85%` CPU, while the `vout_rpi` production path settled around `20%`.
+
+---
+
+## Legacy Notes
+
+The original plan used `omxplayer` and an `evdev` Goodix touch script. That did not become the final setup:
+
+- `omxplayer` is not used by the current installer.
+- The Goodix/`evdev` touch approach was unreliable on this HyperPixel setup.
+- The working touch service reads the controller directly over I2C.
+- The working video service uses `ffmpeg` with `h264_mmal` decode and `vout_rpi` presentation.
+
+See `Touch_and_Backlight_Notes.md` for the full attempt history and `GPU_Output_Test_Plan.md` for the GPU-output experiment.
 
 ## Conclusion
-Your Raspberry Pi will now automatically start the Tapo camera stream on boot. Whenever you tap the screen, the Python script will detect the input and toggle the backlight power, allowing you to easily turn the display off at night and wake it up when needed!
+
+Your Raspberry Pi now starts the Tapo camera stream on boot, presents it efficiently through the GPU/MMAL display path, and uses a single tap to turn both the stream and backlight off or back on.
